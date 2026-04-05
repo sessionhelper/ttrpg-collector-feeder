@@ -17,6 +17,7 @@
 //!   AUDIO_FILE     — absolute path to the WAV to play on /play
 //!   CONTROL_PORT   — loopback port for the control server (default 8003)
 
+use std::io::Write;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -51,10 +52,22 @@ struct AppState {
     current_call: Mutex<Option<Arc<tokio::sync::Mutex<Call>>>>,
     current_track: Mutex<Option<TrackHandle>>,
     current_guild: Mutex<Option<GuildId>>,
+    /// Looping silence track, started on /join and held until /leave.
+    /// Keeps the bot in the "speaking" state so other participants'
+    /// songbird instances see our SSRC in VoiceTick events and complete
+    /// their DAVE handshakes. Without this, bot-only voice channels
+    /// have no voice traffic, and the collector's DAVE check times out.
+    silence_track: Mutex<Option<TrackHandle>>,
+    /// Path to a generated 1-second silence WAV. Created once at startup,
+    /// reused on every /join. Lives in /tmp because the feeder container
+    /// has a writable /tmp even though the root FS is read-only.
+    silence_wav: PathBuf,
 }
 
 impl AppState {
     fn new(name: String, audio_file: PathBuf) -> Self {
+        let silence_wav = PathBuf::from("/tmp/silence.wav");
+        generate_silence_wav(&silence_wav).expect("failed to generate silence WAV");
         Self {
             name,
             audio_file,
@@ -63,8 +76,44 @@ impl AppState {
             current_call: Mutex::new(None),
             current_track: Mutex::new(None),
             current_guild: Mutex::new(None),
+            silence_track: Mutex::new(None),
+            silence_wav,
         }
     }
+}
+
+/// Write a 1-second silent WAV to disk. 48kHz, stereo, 16-bit PCM — matches
+/// Discord's native voice format so songbird doesn't need to resample.
+fn generate_silence_wav(path: &std::path::Path) -> std::io::Result<()> {
+    let sample_rate: u32 = 48_000;
+    let channels: u16 = 2;
+    let bits_per_sample: u16 = 16;
+    let num_samples = sample_rate; // 1 second
+    let data_bytes = num_samples * (channels as u32) * ((bits_per_sample / 8) as u32);
+    let byte_rate = sample_rate * (channels as u32) * ((bits_per_sample / 8) as u32);
+    let block_align = channels * (bits_per_sample / 8);
+
+    let mut f = std::fs::File::create(path)?;
+    // RIFF header
+    f.write_all(b"RIFF")?;
+    f.write_all(&(36 + data_bytes).to_le_bytes())?;
+    f.write_all(b"WAVE")?;
+    // fmt chunk
+    f.write_all(b"fmt ")?;
+    f.write_all(&16u32.to_le_bytes())?; // chunk size
+    f.write_all(&1u16.to_le_bytes())?; // PCM format
+    f.write_all(&channels.to_le_bytes())?;
+    f.write_all(&sample_rate.to_le_bytes())?;
+    f.write_all(&byte_rate.to_le_bytes())?;
+    f.write_all(&block_align.to_le_bytes())?;
+    f.write_all(&bits_per_sample.to_le_bytes())?;
+    // data chunk
+    f.write_all(b"data")?;
+    f.write_all(&data_bytes.to_le_bytes())?;
+    // 192000 bytes of silence (zeros)
+    let zeros = vec![0u8; data_bytes as usize];
+    f.write_all(&zeros)?;
+    Ok(())
 }
 
 struct Handler {
@@ -134,9 +183,23 @@ async fn join(
     let guild = GuildId::new(req.guild_id);
     let channel = ChannelId::new(req.channel_id);
     let call = manager.join(guild, channel).await.map_err(err500)?;
-    *state.current_call.lock().await = Some(call);
+    *state.current_call.lock().await = Some(call.clone());
     *state.current_guild.lock().await = Some(guild);
-    info!(feeder = %state.name, guild_id = req.guild_id, channel_id = req.channel_id, "joined_voice");
+
+    // Start a looping silence track immediately so the feeder is
+    // "speaking" from the collector's perspective. Without this, the
+    // collector's DAVE handshake times out in bot-only channels because
+    // VoiceTick.speaking is empty when nobody is producing voice frames.
+    let silence_input = SongbirdFile::new(state.silence_wav.clone()).into();
+    let silence_handle = {
+        let mut handler = call.lock().await;
+        let handle = handler.play_input(silence_input);
+        let _ = handle.enable_loop();
+        handle
+    };
+    *state.silence_track.lock().await = Some(silence_handle);
+
+    info!(feeder = %state.name, guild_id = req.guild_id, channel_id = req.channel_id, "joined_voice (silence loop active)");
     Ok(StatusCode::OK)
 }
 
@@ -178,7 +241,10 @@ async fn stop(State(state): State<Arc<AppState>>) -> impl IntoResponse {
 async fn leave(
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    // Clear track first — the voice connection is about to go away.
+    // Clear both tracks — the voice connection is about to go away.
+    if let Some(silence) = state.silence_track.lock().await.take() {
+        let _ = silence.stop();
+    }
     *state.current_track.lock().await = None;
     let manager = state
         .songbird
