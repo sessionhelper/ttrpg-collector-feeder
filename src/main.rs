@@ -224,6 +224,14 @@ async fn main() {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(8003);
+    // CONTROL_BIND defaults to loopback for safe local dev runs. In Docker
+    // the compose file sets it to 0.0.0.0 so the container-side listener is
+    // reachable from the host — host safety is enforced by the port mapping
+    // (127.0.0.1:<port>:<port>), not by the in-container bind address.
+    let control_bind: std::net::IpAddr = std::env::var("CONTROL_BIND")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(std::net::IpAddr::from([127, 0, 0, 1]));
 
     let state = Arc::new(AppState::new(name.clone(), audio_file));
 
@@ -247,7 +255,7 @@ async fn main() {
         .route("/leave", post(leave))
         .with_state(state.clone());
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], control_port));
+    let addr = SocketAddr::new(control_bind, control_port);
     info!(feeder = %name, %addr, "control_server_listening");
     let listener = tokio::net::TcpListener::bind(addr)
         .await
