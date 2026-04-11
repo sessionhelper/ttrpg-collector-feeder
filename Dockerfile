@@ -1,4 +1,4 @@
-# E2E feeder bot for ttrpg-collector.
+# E2E feeder bot for chronicle-bot.
 #
 # Dev-only Discord bot: joins a voice channel and plays a pre-recorded WAV on
 # command via a loopback HTTP control API. Four identical containers run in
@@ -16,6 +16,6 @@ FROM debian:bookworm-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app/target/release/ttrpg-collector-feeder /usr/local/bin/ttrpg-collector-feeder
+COPY --from=builder /app/target/release/chronicle-feeder /usr/local/bin/chronicle-feeder
 COPY assets/ /assets/
-CMD ["ttrpg-collector-feeder"]
+CMD ["chronicle-feeder"]

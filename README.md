@@ -1,6 +1,6 @@
-# ttrpg-collector-feeder
+# chronicle-feeder
 
-E2E test harness feeder bot for [`ttrpg-collector`](https://github.com/sessionhelper/ttrpg-collector). Dev-only.
+E2E test harness feeder bot for [`chronicle-bot`](https://github.com/sessionhelper/chronicle-bot). Dev-only.
 
 This is a minimal Discord bot that joins a voice channel and plays a
 pre-recorded WAV file on command. It exists so the end-to-end test harness
@@ -65,7 +65,7 @@ DISCORD_TOKEN=... \
 FEEDER_NAME=moe \
 AUDIO_FILE=$PWD/assets/moe.wav \
 CONTROL_PORT=8003 \
-./target/release/ttrpg-collector-feeder
+./target/release/chronicle-feeder
 
 # In another terminal, drive it:
 curl -sS -X POST http://127.0.0.1:8003/join \
@@ -94,5 +94,5 @@ Models are cached in `assets/piper-models/` (gitignored, ~60 MB each).
 
 ## Related repos
 
-- [`ttrpg-collector`](https://github.com/sessionhelper/ttrpg-collector) — the consent-first voice capture bot this harness tests.
+- [`chronicle-bot`](https://github.com/sessionhelper/chronicle-bot) — the consent-first voice capture bot this harness tests.
 - [`sessionhelper-hub`](https://github.com/sessionhelper/sessionhelper-hub) — org-wide conventions, architecture, canonical compose file.

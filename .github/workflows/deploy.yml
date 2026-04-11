@@ -34,6 +34,6 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/sessionhelper/ttrpg-collector-feeder:latest
-            ghcr.io/sessionhelper/ttrpg-collector-feeder:dev
-            ghcr.io/sessionhelper/ttrpg-collector-feeder:${{ steps.version.outputs.version }}
+            ghcr.io/sessionhelper/chronicle-feeder:latest
+            ghcr.io/sessionhelper/chronicle-feeder:dev
+            ghcr.io/sessionhelper/chronicle-feeder:${{ steps.version.outputs.version }}
