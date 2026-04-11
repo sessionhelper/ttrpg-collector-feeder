@@ -1,6 +1,6 @@
-# ttrpg-collector-feeder
+# chronicle-feeder
 
-Dev-only Discord bot used by the E2E test harness for `ttrpg-collector`. Joins
+Dev-only Discord bot used by the E2E test harness for `chronicle-bot`. Joins
 a voice channel and plays a pre-recorded WAV on command. Four identical
 containers (`moe`, `larry`, `curly`, `gygax`) run in the dev compose stack,
 each with its own bot token and voice clip.

@@ -1,10 +1,10 @@
 [package]
-name = "ttrpg-collector-feeder"
+name = "chronicle-feeder"
 version = "0.1.0"
 edition = "2024"
 
 [[bin]]
-name = "ttrpg-collector-feeder"
+name = "chronicle-feeder"
 path = "src/main.rs"
 
 [dependencies]
