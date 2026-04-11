@@ -1,4 +1,4 @@
-//! Feeder bot — part of the E2E test harness for ttrpg-collector.
+//! Feeder bot — part of the E2E test harness for chronicle-bot.
 //!
 //! A minimal Discord bot that joins a voice channel and plays a pre-recorded
 //! WAV file on demand. Used in E2E tests to simulate real participants talking
