@@ -14,7 +14,11 @@
 //! Env:
 //!   DISCORD_TOKEN  — bot token
 //!   FEEDER_NAME    — short name for logs (e.g. "moe")
-//!   AUDIO_FILE     — absolute path to the WAV to play on /play
+//!   AUDIO_FILE     — absolute path to the OGG Opus file to play on /play.
+//!                    Must be pre-encoded OGG Opus (48kHz, 20ms frames) so
+//!                    songbird's passthrough path forwards packets unchanged
+//!                    instead of decode→mix→reencode. See
+//!                    `scripts/encode-opus.sh` for the encoding step.
 //!   CONTROL_PORT   — loopback port for the control server (default 8003)
 
 use std::io::Write;
@@ -116,6 +120,19 @@ fn generate_silence_wav(path: &std::path::Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Start a looping silence track in the given call and store the handle.
+/// Called on /join and again on /stop (to restart silence after a /play).
+async fn start_silence_loop(state: &Arc<AppState>, call: &Arc<tokio::sync::Mutex<Call>>) {
+    let silence_input = SongbirdFile::new(state.silence_wav.clone()).into();
+    let handle = {
+        let mut handler = call.lock().await;
+        let h = handler.play_input(silence_input);
+        let _ = h.enable_loop();
+        h
+    };
+    *state.silence_track.lock().await = Some(handle);
+}
+
 struct Handler {
     state: Arc<AppState>,
 }
@@ -186,18 +203,12 @@ async fn join(
     *state.current_call.lock().await = Some(call.clone());
     *state.current_guild.lock().await = Some(guild);
 
-    // Start a looping silence track immediately so the feeder is
-    // "speaking" from the collector's perspective. Without this, the
-    // collector's DAVE handshake times out in bot-only channels because
-    // VoiceTick.speaking is empty when nobody is producing voice frames.
-    let silence_input = SongbirdFile::new(state.silence_wav.clone()).into();
-    let silence_handle = {
-        let mut handler = call.lock().await;
-        let handle = handler.play_input(silence_input);
-        let _ = handle.enable_loop();
-        handle
-    };
-    *state.silence_track.lock().await = Some(silence_handle);
+    // Start a looping silence track so the bot is "speaking" from the
+    // collector's perspective — DAVE handshake depends on voice frames
+    // being present to acquire SSRC mappings. The track is STOPPED (not
+    // paused) on /play so num_live drops cleanly to 0 before the main
+    // track brings it to 1, enabling songbird's Opus passthrough.
+    start_silence_loop(&state, &call).await;
 
     info!(feeder = %state.name, guild_id = req.guild_id, channel_id = req.channel_id, "joined_voice (silence loop active)");
     Ok(StatusCode::OK)
@@ -218,6 +229,14 @@ async fn play(
             state.audio_file.display()
         )));
     }
+    // Songbird's Opus passthrough requires exactly one live track. STOP
+    // (not pause) the silence loop so num_live drops cleanly to 0 before
+    // the main track brings it to 1 — pause can leave the track in a
+    // state the mixer still counts as live for an extra tick. A fresh
+    // silence loop is started on /stop.
+    if let Some(sil) = state.silence_track.lock().await.take() {
+        let _ = sil.stop();
+    }
     let input = SongbirdFile::new(state.audio_file.clone()).into();
     let track = {
         let mut handler = call.lock().await;
@@ -233,6 +252,10 @@ async fn stop(State(state): State<Arc<AppState>>) -> impl IntoResponse {
         && let Err(e) = track.stop()
     {
         warn!(feeder = %state.name, error = %e, "track_stop_failed");
+    }
+    // Start a fresh silence loop so the bot keeps "speaking" for DAVE.
+    if let Some(call) = state.current_call.lock().await.clone() {
+        start_silence_loop(&state, &call).await;
     }
     info!(feeder = %state.name, "stopped");
     StatusCode::OK
@@ -302,8 +325,15 @@ async fn main() {
     let state = Arc::new(AppState::new(name.clone(), audio_file));
 
     let intents = GatewayIntents::GUILD_VOICE_STATES;
-    let songbird_config =
-        SongbirdConfig::default().decode_mode(DecodeMode::Decode(DecodeConfig::default()));
+    // use_softclip: false — disable the per-frame soft-clip step to rule
+    // out softclip distortion as the source of the "sore throat" artifact
+    // observed on captured audio. Softclip only runs on the decode→mix→
+    // reencode path, so if passthrough is engaging this flag is inert;
+    // if passthrough is NOT engaging and softclip was introducing the
+    // artifact, disabling it should make captures clean.
+    let songbird_config = SongbirdConfig::default()
+        .decode_mode(DecodeMode::Decode(DecodeConfig::default()))
+        .use_softclip(false);
 
     let handler = Handler {
         state: state.clone(),
