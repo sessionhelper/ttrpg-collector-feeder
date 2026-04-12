@@ -325,15 +325,8 @@ async fn main() {
     let state = Arc::new(AppState::new(name.clone(), audio_file));
 
     let intents = GatewayIntents::GUILD_VOICE_STATES;
-    // use_softclip: false — disable the per-frame soft-clip step to rule
-    // out softclip distortion as the source of the "sore throat" artifact
-    // observed on captured audio. Softclip only runs on the decode→mix→
-    // reencode path, so if passthrough is engaging this flag is inert;
-    // if passthrough is NOT engaging and softclip was introducing the
-    // artifact, disabling it should make captures clean.
-    let songbird_config = SongbirdConfig::default()
-        .decode_mode(DecodeMode::Decode(DecodeConfig::default()))
-        .use_softclip(false);
+    let songbird_config =
+        SongbirdConfig::default().decode_mode(DecodeMode::Decode(DecodeConfig::default()));
 
     let handler = Handler {
         state: state.clone(),
