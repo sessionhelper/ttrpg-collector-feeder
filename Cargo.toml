@@ -3,6 +3,10 @@ name = "chronicle-feeder"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "chronicle_feeder"
+path = "src/lib.rs"
+
 [[bin]]
 name = "chronicle-feeder"
 path = "src/main.rs"
@@ -16,7 +20,7 @@ songbird = { git = "https://github.com/serenity-rs/songbird.git", branch = "next
     "receive", "driver"
 ] }
 
-# Audio codec support for Songbird file playback
+# Audio codec support for Songbird file playback fallback (non-passthrough).
 symphonia = { version = "0.5", features = ["wav", "pcm", "ogg", "vorbis"] }
 
 # Async
@@ -29,9 +33,18 @@ serde_json = "1"
 # Loopback control API
 axum = { version = "0.7" }
 
+# Errors
+thiserror = "2"
+
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # TLS
 rustls = { version = "0.23", features = ["ring"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
+# For `ServiceExt::oneshot` in integration tests — call the router
+# directly without spinning up a TCP listener.
+tower = { version = "0.5", features = ["util"] }
