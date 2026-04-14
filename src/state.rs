@@ -162,9 +162,7 @@ impl FeederState {
             // /play
             (Self::Idle, Event::Play) => TransitionDecision::Reject(E::NotInVoice),
             (Self::Joined { .. }, Event::Play) => TransitionDecision::Proceed,
-            (Self::Playing { .. }, Event::Play) => {
-                TransitionDecision::Reject(E::AlreadyPlaying)
-            }
+            (Self::Playing { .. }, Event::Play) => TransitionDecision::Reject(E::AlreadyPlaying),
             // /stop
             (Self::Idle | Self::Joined { .. }, Event::Stop) => TransitionDecision::Noop,
             (Self::Playing { .. }, Event::Stop) => TransitionDecision::Proceed,

@@ -29,7 +29,12 @@ pub enum AudioFormat {
 
 impl AudioFormat {
     pub fn is_passthrough_ideal(&self) -> bool {
-        matches!(self, Self::OggOpus { sample_rate: 48_000 })
+        matches!(
+            self,
+            Self::OggOpus {
+                sample_rate: 48_000
+            }
+        )
     }
 }
 
@@ -72,9 +77,7 @@ pub fn detect_format(path: &Path) -> AudioFormat {
 }
 
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|w| w == needle)
+    haystack.windows(needle.len()).position(|w| w == needle)
 }
 
 /// Verify the `AUDIO_FILE` exists. Panics with a clear message if it
@@ -92,7 +95,9 @@ pub fn require_audio_file_exists(path: &Path) {
 pub fn check_audio_file(path: &Path) {
     let fmt = detect_format(path);
     match fmt {
-        AudioFormat::OggOpus { sample_rate: 48_000 } => {
+        AudioFormat::OggOpus {
+            sample_rate: 48_000,
+        } => {
             tracing::info!(
                 file = %path.display(),
                 "audio_file_ok: OGG Opus @ 48kHz — passthrough eligible"
@@ -155,7 +160,9 @@ mod tests {
         write_fake_ogg_opus(&tmp, 48_000);
         assert_eq!(
             detect_format(&tmp),
-            AudioFormat::OggOpus { sample_rate: 48_000 }
+            AudioFormat::OggOpus {
+                sample_rate: 48_000
+            }
         );
         let _ = std::fs::remove_file(tmp);
     }
@@ -166,7 +173,9 @@ mod tests {
         write_fake_ogg_opus(&tmp, 44_100);
         assert!(matches!(
             detect_format(&tmp),
-            AudioFormat::OggOpus { sample_rate: 44_100 }
+            AudioFormat::OggOpus {
+                sample_rate: 44_100
+            }
         ));
         let _ = std::fs::remove_file(tmp);
     }
@@ -190,8 +199,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "AUDIO_FILE does not exist")]
     fn require_audio_file_exists_panics_on_missing() {
-        let path = std::env::temp_dir()
-            .join("feeder_test_definitely_missing_file_9f3a2b1c.ogg");
+        let path = std::env::temp_dir().join("feeder_test_definitely_missing_file_9f3a2b1c.ogg");
         // sanity: make sure it really is missing
         let _ = std::fs::remove_file(&path);
         require_audio_file_exists(&path);

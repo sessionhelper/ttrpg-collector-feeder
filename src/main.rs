@@ -17,10 +17,10 @@ use std::sync::Arc;
 
 use serenity::all::{Client, Context, EventHandler, GatewayIntents, Ready};
 use serenity::async_trait;
+use songbird::Config as SongbirdConfig;
 use songbird::driver::{DecodeConfig, DecodeMode};
 use songbird::serenity::register_from_config;
-use songbird::Config as SongbirdConfig;
-use tracing::{error, info, info_span, Instrument};
+use tracing::{Instrument, error, info, info_span};
 
 use chronicle_feeder::{AppState, check_audio_file, require_audio_file_exists, router};
 

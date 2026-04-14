@@ -36,7 +36,7 @@ fn state_with_audio_file(path: PathBuf) -> Arc<AppState> {
 /// content doesn't matter for these tests since we never reach songbird.
 fn write_dummy_audio() -> PathBuf {
     let p = std::env::temp_dir().join("chronicle_feeder_dummy.ogg");
-    std::fs::write(&p, b"OggS" ).expect("write dummy audio file");
+    std::fs::write(&p, b"OggS").expect("write dummy audio file");
     p
 }
 
@@ -79,10 +79,12 @@ async fn play_without_audio_file_returns_404() {
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
     let body_bytes = body::to_bytes(res.into_body(), 1024).await.unwrap();
     let v: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-    assert!(v["error"]
-        .as_str()
-        .unwrap()
-        .starts_with("audio file missing:"));
+    assert!(
+        v["error"]
+            .as_str()
+            .unwrap()
+            .starts_with("audio file missing:")
+    );
 }
 
 #[tokio::test]
