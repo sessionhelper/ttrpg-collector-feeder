@@ -58,7 +58,7 @@ import sys
 import time
 import uuid
 import wave
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 try:
@@ -127,16 +127,24 @@ class DataApiClient:
     def upsert_user(self, pseudo_id: str):
         resp = requests.post(
             f"{self.base_url}/internal/users",
-            json={"discord_id_hash": pseudo_id, "pseudo_id": pseudo_id},
+            json={"pseudo_id": pseudo_id},
             headers=self._headers(),
         )
         resp.raise_for_status()
         return resp.json()
 
-    def add_participant(self, session_id: str, user_id: str, display_name: str | None):
+    def record_display_name(self, pseudo_id: str, display_name: str):
+        resp = requests.post(
+            f"{self.base_url}/internal/users/{pseudo_id}/display_names",
+            json={"display_name": display_name, "source": "bot"},
+            headers=self._headers(),
+        )
+        resp.raise_for_status()
+
+    def add_participant(self, session_id: str, pseudo_id: str):
         resp = requests.post(
             f"{self.base_url}/internal/sessions/{session_id}/participants",
-            json={"user_id": user_id, "mid_session_join": False, "display_name": display_name},
+            json={"pseudo_id": pseudo_id, "mid_session_join": False},
             headers=self._headers(),
         )
         resp.raise_for_status()
@@ -164,11 +172,19 @@ class DataApiClient:
         )
         resp.raise_for_status()
 
-    def upload_chunk(self, session_id: str, pseudo_id: str, data: bytes):
+    def upload_chunk(self, session_id: str, pseudo_id: str, data: bytes,
+                     capture_started_at: datetime, duration_ms: int,
+                     client_chunk_id: str):
+        headers = self._headers(content_type="application/octet-stream")
+        headers["X-Capture-Started-At"] = (
+            capture_started_at.isoformat().replace("+00:00", "Z")
+        )
+        headers["X-Duration-Ms"] = str(duration_ms)
+        headers["X-Client-Chunk-Id"] = client_chunk_id
         resp = requests.post(
             f"{self.base_url}/internal/sessions/{session_id}/audio/{pseudo_id}/chunk",
             data=data,
-            headers=self._headers(content_type="application/octet-stream"),
+            headers=headers,
         )
         resp.raise_for_status()
 
@@ -217,8 +233,9 @@ def chunk_pcm(pcm: bytes, chunk_size: int = CHUNK_SIZE):
 
 
 def fake_pseudo_id(stem: str) -> str:
-    """Deterministic 16-char hex pseudo_id from a filename stem."""
-    return hashlib.sha256(stem.encode()).hexdigest()[:16]
+    """Deterministic 24-char hex pseudo_id from a filename stem (matches
+    production shape: hex(sha256(discord_id))[0:24])."""
+    return hashlib.sha256(stem.encode()).hexdigest()[:24]
 
 
 # --- Main ---
@@ -260,8 +277,9 @@ def inject(audio_dir: Path, metadata: dict, guild_id: int, game_system: str | No
         pcm = wav_to_pcm_48k_stereo(wav_path)
         duration_secs = len(pcm) / BYTES_PER_SECOND
 
-        user = api.upsert_user(pseudo_id)
-        participant = api.add_participant(session_id, user["id"], display_name)
+        api.upsert_user(pseudo_id)
+        api.record_display_name(pseudo_id, display_name)
+        participant = api.add_participant(session_id, pseudo_id)
         api.set_consent(participant["id"], consent_scope)
         api.set_license(participant["id"], no_llm_training, no_public_release)
 
@@ -302,7 +320,19 @@ def inject(audio_dir: Path, metadata: dict, guild_id: int, game_system: str | No
             pseudo_id, display_name, seq, chunk_bytes, dur = plan[round_idx]
             print(f"  [{round_idx+1}/{max_chunks}] {display_name} seq={seq} "
                   f"size={len(chunk_bytes)} dur={dur:.2f}s", file=sys.stderr)
-            api.upload_chunk(session_id, pseudo_id, chunk_bytes)
+            # Capture timestamp = session start + seq * chunk_duration. In
+            # real captures the bot sets this per-chunk; here we synthesize it
+            # so downstream timelining stays faithful.
+            chunk_capture_started_at = started_at + timedelta(
+                seconds=seq * CHUNK_DURATION_SECS
+            )
+            client_chunk_id = f"{pseudo_id}-{seq}"
+            api.upload_chunk(
+                session_id, pseudo_id, chunk_bytes,
+                capture_started_at=chunk_capture_started_at,
+                duration_ms=int(dur * 1000),
+                client_chunk_id=client_chunk_id,
+            )
             round_duration = max(round_duration, dur)
 
         if realtime and round_idx < max_chunks - 1:
