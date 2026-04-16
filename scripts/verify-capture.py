@@ -510,7 +510,7 @@ def main():
     # Verify each consented speaker
     results = []
     for p in consented:
-        pseudo_id = p.get("user_pseudo_id") or p["id"]
+        pseudo_id = p.get("pseudo_id") or p.get("user_pseudo_id") or p["id"]
         display = p.get("display_name") or p.get("character_name")
         gt = ground_truths.get(pseudo_id)
 
